@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, session
+from flask import Flask, request, redirect, session, render_template_string
 import sqlite3
 
 app = Flask(__name__)
@@ -23,15 +23,77 @@ def init_db():
     conn.commit()
     conn.close()
 
-# 👉 ВАЖНО: создаём БД правильно для Render
 with app.app_context():
     init_db()
 
-# ---------------- ROUTES ----------------
+# ---------------- STYLE ----------------
+
+STYLE = """
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: linear-gradient(120deg, #0f172a, #1e293b);
+    color: white;
+    text-align: center;
+}
+
+.container {
+    margin-top: 80px;
+}
+
+.card {
+    background: rgba(255,255,255,0.1);
+    padding: 30px;
+    width: 300px;
+    margin: auto;
+    border-radius: 15px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+input {
+    width: 90%;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 10px;
+    border: none;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    background: #3b82f6;
+    color: white;
+    cursor: pointer;
+    width: 100%;
+}
+
+button:hover {
+    background: #2563eb;
+}
+
+a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+</style>
+"""
+
+# ---------------- HOME ----------------
 
 @app.route("/")
 def home():
-    return "Сайт работает 🚀"
+    return STYLE + """
+    <div class="container">
+        <h1>🚀 Мой сайт</h1>
+        <div class="card">
+            <p>Добро пожаловать!</p>
+            <a href="/login">Войти</a><br><br>
+            <a href="/register">Регистрация</a>
+        </div>
+    </div>
+    """
 
 # ---------------- REGISTER ----------------
 
@@ -45,24 +107,28 @@ def register():
         c = conn.cursor()
 
         try:
-            c.execute(
-                "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, password)
-            )
+            c.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                      (username, password))
             conn.commit()
         except:
-            return "❌ Пользователь уже существует"
+            return STYLE + "<h2>❌ Пользователь уже существует</h2>"
 
         conn.close()
         return redirect("/login")
 
-    return """
-    <h2>Register</h2>
-    <form method="post">
-        <input name="username" placeholder="username">
-        <input name="password" placeholder="password">
-        <button type="submit">Register</button>
-    </form>
+    return STYLE + """
+    <div class="container">
+        <div class="card">
+            <h2>Регистрация</h2>
+            <form method="post">
+                <input name="username" placeholder="username"><br>
+                <input name="password" placeholder="password" type="password"><br>
+                <button type="submit">Создать аккаунт</button>
+            </form>
+            <br>
+            <a href="/">← назад</a>
+        </div>
+    </div>
     """
 
 # ---------------- LOGIN ----------------
@@ -76,30 +142,41 @@ def login():
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
 
-        c.execute(
-            "SELECT * FROM users WHERE username=? AND password=?",
-            (username, password)
-        )
+        c.execute("SELECT * FROM users WHERE username=? AND password=?",
+                  (username, password))
 
         user = c.fetchone()
         conn.close()
 
         if user:
             session["user"] = username
-            return "✅ Вход выполнен"
+            return STYLE + f"""
+            <div class="container">
+                <div class="card">
+                    <h2>✅ Добро пожаловать {username}</h2>
+                    <a href="/">На главную</a>
+                </div>
+            </div>
+            """
         else:
-            return "❌ Неверный логин или пароль"
+            return STYLE + "<h2>❌ Неверный логин или пароль</h2>"
 
-    return """
-    <h2>Login</h2>
-    <form method="post">
-        <input name="username" placeholder="username">
-        <input name="password" placeholder="password">
-        <button type="submit">Login</button>
-    </form>
+    return STYLE + """
+    <div class="container">
+        <div class="card">
+            <h2>Вход</h2>
+            <form method="post">
+                <input name="username" placeholder="username"><br>
+                <input name="password" placeholder="password" type="password"><br>
+                <button type="submit">Войти</button>
+            </form>
+            <br>
+            <a href="/">← назад</a>
+        </div>
+    </div>
     """
 
-# ---------------- RUN (локально) ----------------
+# ---------------- RUN ----------------
 
 if __name__ == "__main__":
     app.run()
