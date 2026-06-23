@@ -7,6 +7,8 @@ from flask import Flask, request, render_template_string, redirect, url_for, ses
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+with app.app_context():
+    init_db()
 app.secret_key = 'super_secret_key_for_sessions'
 
 # Лимит на размер файла
@@ -792,4 +794,4 @@ def logout():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0')
