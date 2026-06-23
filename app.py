@@ -1,29 +1,17 @@
 from flask import Flask, request, redirect, session, render_template_string
-import os
 import psycopg2
+import os
 from werkzeug.security import generate_password_hash, check_password_hash
-import cloudinary
-import cloudinary.uploader
 
 app = Flask(__name__)
 app.secret_key = "secret123"
 
-# ---------------- CLOUDINARY ----------------
-
-cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET")
-)
-
-# ---------------- DATABASE (POSTGRES) ----------------
-
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ---------------- DB ----------------
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
-
-# ---------------- INIT DB ----------------
 
 def init_db():
     conn = get_db()
@@ -38,7 +26,7 @@ def init_db():
     )
     """)
 
-    # admin
+    # 👉 главный админ
     cur.execute("SELECT * FROM users WHERE username=%s", ("admin",))
     if not cur.fetchone():
         cur.execute(
@@ -56,38 +44,7 @@ with app.app_context():
 
 @app.route("/")
 def home():
-    return "<h1>Сайт работает 🚀 (PRO VERSION)</h1>"
-
-# ---------------- REGISTER ----------------
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = generate_password_hash(request.form["password"])
-
-        conn = get_db()
-        cur = conn.cursor()
-
-        try:
-            cur.execute(
-                "INSERT INTO users (username, password) VALUES (%s, %s)",
-                (username, password)
-            )
-            conn.commit()
-        except:
-            return "User exists"
-
-        conn.close()
-        return redirect("/login")
-
-    return """
-    <form method="post">
-        <input name="username">
-        <input name="password" type="password">
-        <button>Register</button>
-    </form>
-    """
+    return "<h1>Сайт работает 🚀</h1>"
 
 # ---------------- LOGIN ----------------
 
@@ -107,8 +64,8 @@ def login():
         if user and check_password_hash(user[1], password):
             session["user"] = user[0]
             session["role"] = user[2]
-            return redirect("/")
-        return "Wrong login"
+            return redirect("/admin")
+        return "❌ Неверный логин"
 
     return """
     <form method="post">
@@ -118,30 +75,12 @@ def login():
     </form>
     """
 
-# ---------------- VIDEO UPLOAD (CLOUDINARY) ----------------
-
-@app.route("/upload", methods=["GET", "POST"])
-def upload():
-    if request.method == "POST":
-        file = request.files["file"]
-
-        result = cloudinary.uploader.upload_large(file, resource_type="video")
-
-        return f"Uploaded: {result['secure_url']}"
-
-    return """
-    <form method="post" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <button>Upload video</button>
-    </form>
-    """
-
-# ---------------- ADMIN ----------------
+# ---------------- ADMIN PANEL ----------------
 
 @app.route("/admin")
 def admin():
     if session.get("role") != "admin":
-        return "No access"
+        return "⛔ Нет доступа"
 
     conn = get_db()
     cur = conn.cursor()
@@ -150,11 +89,73 @@ def admin():
     users = cur.fetchall()
     conn.close()
 
-    html = "<h2>Admin panel</h2>"
-    for u in users:
-        html += f"{u}<br>"
+    html = "<h2>Admin panel</h2><table border='1'>"
 
+    for u in users:
+
+        # 👉 защита главного админа
+        if u[1] == "admin":
+            action = "🔒 главный админ"
+        else:
+            action = f"<a href='/delete/{u[0]}'>Удалить</a> | <a href='/make_admin/{u[0]}'>Сделать админом</a>"
+
+        html += f"""
+        <tr>
+            <td>{u[0]}</td>
+            <td>{u[1]}</td>
+            <td>{u[2]}</td>
+            <td>{action}</td>
+        </tr>
+        """
+
+    html += "</table>"
     return html
+
+# ---------------- MAKE ADMIN ----------------
+
+@app.route("/make_admin/<int:user_id>")
+def make_admin(user_id):
+    if session.get("role") != "admin":
+        return "⛔ Нет доступа"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("UPDATE users SET role='admin' WHERE id=%s", (user_id,))
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin")
+
+# ---------------- DELETE USER ----------------
+
+@app.route("/delete/<int:user_id>")
+def delete_user(user_id):
+    if session.get("role") != "admin":
+        return "⛔ Нет доступа"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 👉 проверка: нельзя удалить главного админа
+    cur.execute("SELECT username FROM users WHERE id=%s", (user_id,))
+    user = cur.fetchone()
+
+    if user and user[0] == "admin":
+        return "⛔ Нельзя удалить главного админа"
+
+    cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin")
+
+# ---------------- LOGOUT ----------------
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
 
 # ---------------- RUN ----------------
 
