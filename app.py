@@ -12,6 +12,7 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
+    # таблица пользователей
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,11 +21,18 @@ def init_db():
     )
     """)
 
+    # 👉 создаём админа (если его нет)
+    c.execute("SELECT * FROM users WHERE username=?", ("admin",))
+    admin = c.fetchone()
+
+    if not admin:
+        c.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            ("admin", "admin123")
+        )
+
     conn.commit()
     conn.close()
-
-with app.app_context():
-    init_db()
 
 # ---------------- STYLE ----------------
 
