@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, session, render_template_string
+from flask import Flask, request, redirect, session
 import psycopg2
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -6,12 +6,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = "secret123"
 
+# ---------------- DATABASE ----------------
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ---------------- DB ----------------
-
 def get_db():
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL not set in environment variables")
     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+# ---------------- INIT DB ----------------
 
 def init_db():
     conn = get_db()
@@ -26,7 +30,7 @@ def init_db():
     )
     """)
 
-    # 👉 главный админ
+    # главный админ (защищённый)
     cur.execute("SELECT * FROM users WHERE username=%s", ("admin",))
     if not cur.fetchone():
         cur.execute(
@@ -37,14 +41,53 @@ def init_db():
     conn.commit()
     conn.close()
 
+# ---------------- SAFE START ----------------
+
 with app.app_context():
     init_db()
 
-# ---------------- HOME ----------------
+# ---------------- ROUTES ----------------
 
 @app.route("/")
 def home():
-    return "<h1>Сайт работает 🚀</h1>"
+    if "user" in session:
+        return f"""
+        <h1>Привет {session['user']}</h1>
+        <a href="/logout">Logout</a><br>
+        <a href="/admin">Admin panel</a>
+        """
+    return "<h1>Сайт работает 🚀</h1><a href='/login'>Login</a> | <a href='/register'>Register</a>"
+
+# ---------------- REGISTER ----------------
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = generate_password_hash(request.form["password"])
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        try:
+            cur.execute(
+                "INSERT INTO users (username, password) VALUES (%s, %s)",
+                (username, password)
+            )
+            conn.commit()
+        except:
+            return "❌ User already exists"
+
+        conn.close()
+        return redirect("/login")
+
+    return """
+    <form method="post">
+        <input name="username" placeholder="username">
+        <input name="password" type="password" placeholder="password">
+        <button>Register</button>
+    </form>
+    """
 
 # ---------------- LOGIN ----------------
 
@@ -64,8 +107,8 @@ def login():
         if user and check_password_hash(user[1], password):
             session["user"] = user[0]
             session["role"] = user[2]
-            return redirect("/admin")
-        return "❌ Неверный логин"
+            return redirect("/")
+        return "❌ Wrong login"
 
     return """
     <form method="post">
@@ -80,7 +123,7 @@ def login():
 @app.route("/admin")
 def admin():
     if session.get("role") != "admin":
-        return "⛔ Нет доступа"
+        return "⛔ No access"
 
     conn = get_db()
     cur = conn.cursor()
@@ -89,22 +132,26 @@ def admin():
     users = cur.fetchall()
     conn.close()
 
-    html = "<h2>Admin panel</h2><table border='1'>"
+    html = "<h1>Admin panel</h1><table border='1'>"
 
     for u in users:
+        user_id, username, role = u
 
-        # 👉 защита главного админа
-        if u[1] == "admin":
-            action = "🔒 главный админ"
+        # 🔒 защита главного админа
+        if username == "admin":
+            actions = "🔒 MAIN ADMIN"
         else:
-            action = f"<a href='/delete/{u[0]}'>Удалить</a> | <a href='/make_admin/{u[0]}'>Сделать админом</a>"
+            actions = f"""
+            <a href="/delete/{user_id}">Delete</a> |
+            <a href="/make_admin/{user_id}">Make admin</a>
+            """
 
         html += f"""
         <tr>
-            <td>{u[0]}</td>
-            <td>{u[1]}</td>
-            <td>{u[2]}</td>
-            <td>{action}</td>
+            <td>{user_id}</td>
+            <td>{username}</td>
+            <td>{role}</td>
+            <td>{actions}</td>
         </tr>
         """
 
@@ -116,7 +163,7 @@ def admin():
 @app.route("/make_admin/<int:user_id>")
 def make_admin(user_id):
     if session.get("role") != "admin":
-        return "⛔ Нет доступа"
+        return "⛔ No access"
 
     conn = get_db()
     cur = conn.cursor()
@@ -132,17 +179,17 @@ def make_admin(user_id):
 @app.route("/delete/<int:user_id>")
 def delete_user(user_id):
     if session.get("role") != "admin":
-        return "⛔ Нет доступа"
+        return "⛔ No access"
 
     conn = get_db()
     cur = conn.cursor()
 
-    # 👉 проверка: нельзя удалить главного админа
+    # 🔒 запрет удаления главного админа
     cur.execute("SELECT username FROM users WHERE id=%s", (user_id,))
     user = cur.fetchone()
 
     if user and user[0] == "admin":
-        return "⛔ Нельзя удалить главного админа"
+        return "⛔ Cannot delete main admin"
 
     cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
     conn.commit()
@@ -157,7 +204,7 @@ def logout():
     session.clear()
     return redirect("/")
 
-# ---------------- RUN ----------------
+# ---------------- RUN (Render uses gunicorn, this is fallback) ----------------
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000)
