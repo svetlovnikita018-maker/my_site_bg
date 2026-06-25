@@ -540,20 +540,34 @@ def make_user_admin(user_id):
 def delete_user_account(user_id):
     if session.get('role') != 'admin':
         return "Доступ запрещен", 403
-        
+
     conn = get_db()
-    user_to_delete = conn.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
-    
-    if user_to_delete and user_to_delete['username'] == session.get('username'):
+
+    user_to_delete = conn.execute(
+        'SELECT username, role FROM users WHERE id = ?',
+        (user_id,)
+    ).fetchone()
+
+    if not user_to_delete:
+        flash('Пользователь не найден.')
+        conn.close()
+        return redirect(url_for('admin_users'))
+
+    # Нельзя удалить самого себя
+    if user_to_delete['username'] == session.get('username'):
         flash('Ошибка: Вы не можете удалить собственный профиль.')
+
+    # Нельзя удалить главного администратора
+    elif user_to_delete['username'] == 'admin':
+        flash('Ошибка: Главный администратор защищён от удаления.')
+
     else:
         conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
         conn.commit()
         flash(f'Пользователь {user_to_delete["username"]} был удален из системы.')
-        
+
     conn.close()
     return redirect(url_for('admin_users'))
-
 # --- Основной функционал приложения ---
 
 @app.route('/admin', methods=['GET', 'POST'])
