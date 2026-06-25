@@ -7,8 +7,6 @@ from flask import Flask, request, render_template_string, redirect, url_for, ses
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-with app.app_context():
-    init_db()
 app.secret_key = 'super_secret_key_for_sessions'
 
 # Лимит на размер файла
@@ -476,20 +474,11 @@ def admin_users():
         # Кнопки управления появляются, только если это не сам текущий админ
         actions_html = ""
         if user['username'] != session.get('username'):
-            admin_toggle_btn = ""
-            
-            # Если пользователь не админ — даем кнопку "В админы"
+            make_admin_btn = ""
             if user['role'] != 'admin':
-                admin_toggle_btn = f"""
+                make_admin_btn = f"""
                 <form action="{url_for('make_user_admin', user_id=user['id'])}" method="POST">
                     <button type="submit" class="btn btn-sm">В админы</button>
-                </form>
-                """
-            # Если пользователь админ, а текущая сессия принадлежит ГЛАВНОМУ админу (логин admin)
-            elif session.get('username') == 'admin':
-                admin_toggle_btn = f"""
-                <form action="{url_for('remove_user_admin', user_id=user['id'])}" method="POST" onsubmit="return confirm('Лишить пользователя {user['username']} прав администратора?');">
-                    <button type="submit" class="btn btn-sm btn-danger">Убрать из админов</button>
                 </form>
                 """
             
@@ -498,7 +487,7 @@ def admin_users():
                 <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
             </form>
             """
-            actions_html = f"<div class='user-actions'>{admin_toggle_btn}{delete_btn}</div>"
+            actions_html = f"<div class='user-actions'>{make_admin_btn}{delete_btn}</div>"
         else:
             actions_html = "<span style='color: var(--text-muted); font-size: 0.75rem;'>[ ТЕКУЩИЙ ПРОФИЛЬ ]</span>"
 
@@ -545,29 +534,6 @@ def make_user_admin(user_id):
     conn.close()
     
     flash('Права администратора успешно предоставлены.')
-    return redirect(url_for('admin_users'))
-
-# --- НОВЫЙ МАРШРУТ ДЛЯ РАЗЖАЛОВАНИЯ ИЗ АДМИНОВ (ДОСТУПЕН ТОЛЬКО ГЛАВ АДМИНУ) ---
-@app.route('/admin/remove_admin/<int:user_id>', methods=['POST'])
-def remove_user_admin(user_id):
-    # Проверяем, что запрашивающий — админ И его логин 'admin' (главный админ)
-    if session.get('role') != 'admin' or session.get('username') != 'admin':
-        return "Доступ запрещен. Только главный администратор может выполнять это действие.", 403
-        
-    conn = get_db()
-    target_user = conn.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
-    
-    if target_user:
-        if target_user['username'] == 'admin':
-            flash('Критическая ошибка: Нельзя лишить прав главного администратора.')
-        else:
-            conn.execute('UPDATE users SET role = "user" WHERE id = ?', (user_id,))
-            conn.commit()
-            flash(f'Пользователь "{target_user["username"]}" успешно возвращен к роли обычного пользователя.')
-    else:
-        flash('Пользователь не найден.')
-        
-    conn.close()
     return redirect(url_for('admin_users'))
 
 @app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
@@ -794,4 +760,5 @@ def logout():
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0')
+    # Как вы и предпочитаете, приложение запускается и тестируется в локальной среде на ПК
+    app.run(debug=True, port=5000)
