@@ -81,7 +81,7 @@ BASE_HTML = """
 </head>
 <body>
 <div class="box">
-    {{content}}
+    {{content|safe}}
 </div>
 </body>
 </html>
