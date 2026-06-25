@@ -22,10 +22,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db():
     if not DATABASE_URL:
-        raise Exception("DATABASE_URL is missing in Render ENV")
+        raise Exception("DATABASE_URL missing")
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-# ---------------- INIT DB (SAFE) ----------------
+# ---------------- INIT DB SAFE ----------------
 
 def init_db():
     try:
@@ -51,31 +51,60 @@ def init_db():
 
         conn.commit()
         conn.close()
-
     except Exception as e:
         print("DB INIT ERROR:", e)
 
-# ---------------- SAFE START ----------------
-
 with app.app_context():
     init_db()
+
+# ---------------- UI TEMPLATE ----------------
+
+BASE_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Site</title>
+    <style>
+        body { font-family: Arial; background:#0f0f0f; color:white; text-align:center; }
+        a { color:#4da3ff; margin:10px; text-decoration:none; font-size:18px; }
+        .box { margin-top:80px; }
+        input, button {
+            padding:10px;
+            margin:5px;
+            border-radius:8px;
+            border:none;
+        }
+        button { background:#4da3ff; color:white; cursor:pointer; }
+        table { margin:auto; border-collapse:collapse; }
+        td { border:1px solid white; padding:10px; }
+    </style>
+</head>
+<body>
+<div class="box">
+    {{content}}
+</div>
+</body>
+</html>
+"""
 
 # ---------------- HOME ----------------
 
 @app.route("/")
 def home():
     if "user" in session:
-        return f"""
-        <h1>Привет {session['user']}</h1>
-        <a href="/upload">Upload</a><br>
-        <a href="/admin">Admin</a><br>
-        <a href="/logout">Logout</a>
+        content = f"""
+        <h1>Привет {session['user']} 🚀</h1>
+        <a href="/upload">📤 Upload</a>
+        <a href="/admin">🛠 Admin</a>
+        <a href="/logout">🚪 Logout</a>
         """
-    return """
-    <h1>Сайт работает 🚀</h1>
-    <a href="/login">Login</a> |
-    <a href="/register">Register</a>
-    """
+    else:
+        content = """
+        <h1>Сайт работает 🚀</h1>
+        <a href="/login">Login</a>
+        <a href="/register">Register</a>
+        """
+    return render_template_string(BASE_HTML, content=content)
 
 # ---------------- REGISTER ----------------
 
@@ -100,13 +129,14 @@ def register():
         conn.close()
         return redirect("/login")
 
-    return """
+    return render_template_string(BASE_HTML, content="""
+    <h2>Register</h2>
     <form method="post">
-        <input name="username">
-        <input name="password" type="password">
+        <input name="username" placeholder="username"><br>
+        <input name="password" type="password" placeholder="password"><br>
         <button>Register</button>
     </form>
-    """
+    """)
 
 # ---------------- LOGIN ----------------
 
@@ -127,17 +157,19 @@ def login():
             session["user"] = user[0]
             session["role"] = user[2]
             return redirect("/")
+
         return "Wrong login"
 
-    return """
+    return render_template_string(BASE_HTML, content="""
+    <h2>Login</h2>
     <form method="post">
-        <input name="username">
-        <input name="password" type="password">
+        <input name="username" placeholder="username"><br>
+        <input name="password" type="password" placeholder="password"><br>
         <button>Login</button>
     </form>
-    """
+    """)
 
-# ---------------- UPLOAD VIDEO ----------------
+# ---------------- UPLOAD ----------------
 
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
@@ -154,17 +186,18 @@ def upload():
 
         url = result["secure_url"]
 
-        return f"""
+        return render_template_string(BASE_HTML, content=f"""
         <h2>Uploaded ✅</h2>
         <a href="{url}">Watch video</a>
-        """
+        """)
 
-    return """
+    return render_template_string(BASE_HTML, content="""
+    <h2>Upload video</h2>
     <form method="post" enctype="multipart/form-data">
-        <input type="file" name="file">
+        <input type="file" name="file"><br>
         <button>Upload</button>
     </form>
-    """
+    """)
 
 # ---------------- ADMIN ----------------
 
@@ -180,35 +213,25 @@ def admin():
     users = cur.fetchall()
     conn.close()
 
-    html = "<h2>Admin panel</h2><table border='1'>"
+    html = "<h2>Admin panel</h2><table>"
 
     for u in users:
-        user_id, username, role = u
+        uid, username, role = u
 
-        # защита главного админа
         if username == "admin":
             action = "🔒 MAIN ADMIN"
         else:
-            action = f"""
-            <a href='/delete/{user_id}'>Delete</a>
-            """
+            action = f"<a href='/delete/{uid}'>Delete</a>"
 
-        html += f"""
-        <tr>
-            <td>{user_id}</td>
-            <td>{username}</td>
-            <td>{role}</td>
-            <td>{action}</td>
-        </tr>
-        """
+        html += f"<tr><td>{uid}</td><td>{username}</td><td>{role}</td><td>{action}</td></tr>"
 
     html += "</table>"
-    return html
+    return render_template_string(BASE_HTML, content=html)
 
 # ---------------- DELETE ----------------
 
 @app.route("/delete/<int:user_id>")
-def delete_user(user_id):
+def delete(user_id):
     if session.get("role") != "admin":
         return "No access"
 
